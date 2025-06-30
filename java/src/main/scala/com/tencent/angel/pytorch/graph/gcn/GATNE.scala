@@ -1,7 +1,6 @@
 package com.tencent.angel.pytorch.graph.gcn
 
 
-import com.tencent.angel.graph.data.FeatureFormat
 import com.tencent.angel.pytorch.data.SampleParser
 import com.tencent.angel.pytorch.eval.Evaluation
 import com.tencent.angel.pytorch.io.{DataLoaderUtils, IOFunctions}
@@ -9,11 +8,9 @@ import com.tencent.angel.pytorch.params._
 import com.tencent.angel.pytorch.torch.TorchModel
 import com.tencent.angel.spark.context.PSContext
 import com.tencent.angel.graph.utils.params._
-import com.tencent.angel.pytorch.params._
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import com.tencent.angel.spark.ml.util.LogUtils
-import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.sql.{DataFrame, Dataset, Row}
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
@@ -54,7 +51,6 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
     setFeatureDims(torch.getFeatureDims)
     setFieldNums(torch.getFieldNums)
     setEmbedDims(torch.getFeatEmbedDims)
-    if ($(dataFormat) == FeatureFormat.DENSE_HIGH_SPARSE) setFeatureSplitIdxs(torch.getFeatureSplitIdxs)
 
     // init ps model
     val featureIds = if ($(fieldNums).nonEmpty) Option(getFeatureIndexs(featureDFs.map(f => (f._1.toString, f._2))).
@@ -133,7 +129,7 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
       feat.select("node", "feature").rdd.filter(row => row.length > 0)
         .filter(row => row.get(0) != null)
         .map(row => (row.getLong(0), row.getString(1)))
-        .map(f => (f._1, SampleParser.parseFeature(f._2, dimsMap.getOrElse(name, 0).toLong, $(dataFormat), featureSplitIdxsMap.getOrElse(name, 0))))
+        .map(f => (f._1, SampleParser.parseFeature(f._2, dimsMap.getOrElse(name, 0), $(dataFormat))))
         .repartition($(partitionNum))
         .mapPartitionsWithIndex((index, it) =>
           Iterator.single(NodeFeaturePartition.apply(index, it)))
@@ -147,7 +143,7 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
                           featureIds: Map[Int, RDD[Long]]): Unit = {
     model.initEmbeddings(featureIds, $(batchSize), getOptimizer.getNumSlots(), getInitMethod)
 
-    val conf = SparkHadoopUtil.get.newConfiguration(SparkContext.getOrCreate().getConf)
+    val conf = SparkContext.getOrCreate().hadoopConfiguration
     val keyValueSep = IOFunctions.parseSep(conf.get("angel.embedding.keyvalue.sep", "colon"))
     val featSep = IOFunctions.parseSep(conf.get("angel.embedding.feature.sep", "space"))
 
@@ -187,7 +183,7 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
                        extraContextInputPath: String): Unit = {
     initContext(model, nodeTypeRDD, numNodes, Random.nextInt(), mean, std)
 
-    val conf = SparkHadoopUtil.get.newConfiguration(SparkContext.getOrCreate().getConf)
+    val conf = SparkContext.getOrCreate().hadoopConfiguration
     val keyValueSep = IOFunctions.parseSep(conf.get("angel.embedding.keyvalue.sep", "colon"))
     val featSep = IOFunctions.parseSep(conf.get("angel.embedding.feature.sep", "space"))
 
@@ -254,7 +250,7 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
     println(s"generate train pairs cost ${(end - start) / 1000}s, total train pars ${len}")
 
     trainPairs.mapPartitionsWithIndex((index, it) =>
-        Iterator.single(GATNEPartition.apply(index, it, $(torchModelPath), $(dataFormat))))
+        Iterator.single(GATNEPartition.apply(index, it, $(torchModelPath))))
   }
 
   def generateTestPairs(testEdges: DataFrame, nodeTypeRDD: RDD[(Long, Int)]): RDD[GATNEPartition] = {
@@ -263,13 +259,13 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
       .distinct()
     val nodeWithType = nodeTypeRDD.join(nodes).map(f => (f._1, f._1, f._2._1, f._2._2))       // node, node, node_type, edge_type
     nodeWithType.mapPartitionsWithIndex((index, it) =>
-      Iterator.single(GATNEPartition.apply(index, it, $(torchModelPath), $(dataFormat))))
+      Iterator.single(GATNEPartition.apply(index, it, $(torchModelPath))))
   }
 
   def generatePredictPairs(nodeTypeRDD: RDD[(Long, Int)]): RDD[GATNEPartition] = {
     val all_edgeTypes = getEdgeTypes.split(",").map(_.toInt)
     nodeTypeRDD.flatMap(f => all_edgeTypes.map(e => (f._1, f._1, f._2, e))).mapPartitionsWithIndex((index, it) =>
-      Iterator.single(GATNEPartition.apply(index, it, $(torchModelPath), $(dataFormat))))
+      Iterator.single(GATNEPartition.apply(index, it, $(torchModelPath))))
   }
 
   def parseBatchData(sentences: Array[Array[Long]],
@@ -327,7 +323,7 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
       val (lossSum, numSteps, allSteps) = trainPairs.map (_.asInstanceOf[GATNEPartition]
           .trainEpoch(model, $(batchSize), optim, all_nodeTypes, all_edgeTypes, schema, getFeatureDimsByInt, getEmbedDimsByInt,
             getFieldNumsByInt, getFeatureSplitIdxsByInt, $(fieldMultiHot), $(contextDim), $(negative), getEachNumSample,
-            $(sampleMethod), $(logStep), $(localNegativeSample), $(negSampleByNodeType), $(maxIndex), maxIndexMap, minIndexMap))
+           $(logStep), $(localNegativeSample), $(negSampleByNodeType), $(maxIndex), maxIndexMap, minIndexMap))
       .reduce((f1, f2) => (f1._1 + f2._1, math.max(f1._2, f2._2), f1._3 + f2._3))
 
       var ends = System.currentTimeMillis()
@@ -398,7 +394,7 @@ class GATNE extends HGNN with HasWindowSize with HasNegative with HasNodeTypes w
 
     testPairs.flatMap(_.asInstanceOf[GATNEPartition]
         .genEmbeddingEpoch(model, getBatchSize, all_nodeTypes, all_edgeTypes, model_schema, getFeatureDimsByInt, getEmbedDimsByInt,
-          getFieldNumsByInt, getFeatureSplitIdxsByInt, $(fieldMultiHot), $(contextDim), $(negative), getEachNumSample, $(sampleMethod)))
+          getFieldNumsByInt, getFeatureSplitIdxsByInt, $(fieldMultiHot), $(contextDim), $(negative), getEachNumSample))
   }
 
   def saveFeatEmbeds_(model: EmbeddingGNNPSModel, savePath: String, curEpoch: Int = -1): Unit = {
