@@ -423,12 +423,30 @@ class NodeFeaturePartition(index: Int,
 
   def init(model: BiSAGEPSModel, graphType: Int, numBatch: Int): Unit =
     model.initNodeFeatures(keys, features, graphType, numBatch)
+
+  def init(model: HGNNPSModel, name: String, numBatch: Int): Unit =
+    model.initNodeFeatures(keys, features, name, numBatch)
+
+  def init(model: EmbeddingGNNPSModel, numBatch: Int): Unit =
+    model.initNodeFeatures(keys, features, numBatch)
+
+  def init(model: EmbeddingGNNPSModel, embeddingName: Int, numBatch: Int, slot: Int): Unit =
+    model.initExtraEmbeddings(keys, features, embeddingName, numBatch, slot)
+
+  def initContext(model: EmbeddingGNNPSModel, embedddingDim: Int, numBatch: Int, slot: Int): Unit =
+    model.initExtraContext(keys, features, embedddingDim, numBatch, slot)
+
+  def init(model: HGNNPSModel, embeddingName: String, numBatch: Int, slot: Int): Unit =
+    model.initExtraEmbeddings(keys, features, embeddingName, numBatch, slot)
 }
 
 private[gcn]
 class NodeLabelPartition(index: Int, labels: LongFloatVector) extends Serializable {
   def init(model: GNNPSModel): Unit =
     model.setLabels(labels)
+
+  def init(model: HGNNPSModel, name: String): Unit =
+    model.setLabels(name, labels)
 
   def initTestLabels(model: GNNPSModel): Unit =
     model.setTestLabels(labels)

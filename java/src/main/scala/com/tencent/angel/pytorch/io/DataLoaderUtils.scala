@@ -53,4 +53,3 @@ object DataLoaderUtils {
     Iterator.single((minId, maxId, numNodes))
   }
 }
-}

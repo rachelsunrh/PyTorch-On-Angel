@@ -1,6 +1,7 @@
 package com.tencent.angel.pytorch.examples.unsupervised.cluster
 
 import com.tencent.angel.conf.AngelConf
+import com.tencent.angel.pytorch.graph.gcn.GATNE
 import com.tencent.angel.graph.utils.GraphIO
 import com.tencent.angel.pytorch.io.IOFunctions
 import com.tencent.angel.pytorch.utils.{FileUtils, PartitionUtils}
@@ -98,7 +99,6 @@ object GATNEExample {
     gatne.setDecay(decay)
     gatne.setEvaluations(evals)
     gatne.setHasWeighted(isWeighted)
-    gatne.setSampleMethod(sampleMethod)
     gatne.setContextDim(contextDim)
     gatne.setWindowSize(windowSize)
     gatne.setNegative(numNegSamples)

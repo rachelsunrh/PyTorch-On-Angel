@@ -350,6 +350,8 @@ class GNNPSModel(graph: PSMatrix,
 
   def saveFeatEmbed(featEmbedPath: String): Unit = ???
 
+  def loadFeatEmbed(featEmbedPath: String): Unit = ???
+
   /**
     * Dump the matrices on PS to HDFS
     *
